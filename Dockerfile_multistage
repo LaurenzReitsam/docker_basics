@@ -1,0 +1,46 @@
+FROM python:3.9-slim as builder
+
+WORKDIR /src
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_NO_CACHE_DIR=off \
+    PYTHONUNBUFFERED=True \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VERSION=1.1.7 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false
+
+ENV PATH="$PATH:$POETRY_HOME/bin"
+
+RUN apt-get update && \
+    apt-get install curl -y && \
+    apt-get clean
+
+RUN curl -sSL https://install.python-poetry.org | python3 -
+
+COPY poetry.lock \
+     pyproject.toml \
+     ./
+
+RUN poetry export --without-hashes --no-interaction --no-ansi --dev -o dev_requirements.txt
+RUN poetry export --without-hashes --no-interaction --no-ansi -o requirements.txt
+
+FROM builder as trainer
+
+RUN pip install -r dev_requirements.txt
+
+COPY train.py ./
+RUN python train.py
+
+
+FROM python:3.9-slim
+
+WORKDIR app
+
+COPY --from=builder /src/requirements.txt .
+COPY --from=trainer /src/*.csv ./
+COPY predict.py ./
+
+RUN pip install -r requirements.txt
+
+CMD python ./predict.py
